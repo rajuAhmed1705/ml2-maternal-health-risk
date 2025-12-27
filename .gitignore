@@ -1,0 +1,33 @@
+# R generated files
+.Rhistory
+.Rdata
+.RData
+.Ruserdata
+.Rproj.user/
+
+# R Markdown intermediate files
+*.knit.md
+*.utf8.md
+*_cache/
+*_files/
+
+# LaTeX files generated during PDF rendering
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.tex
+
+# IDE files
+.vscode/
+*.Rproj
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*~
+*.tmp
+*.bak
