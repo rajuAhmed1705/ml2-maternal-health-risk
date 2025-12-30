@@ -7,6 +7,17 @@
 
 ---
 
+
+Abstract
+
+Maternal health is a major challenge in Bangladesh, particularly in rural areas where healthcare is hard to
+access. Many pregnant women suffer from conditions like high blood pressure and infections that go
+unnoticed due to a lack of medical facilities and trained professionals. Early marriages, limited education,
+and poverty add to the problem. Women often cannot reach healthcare centers in time, leading to
+complications which increases the risk associated with the same. Sometimes this can lead to deaths.
+Addressing this issue requires improving access to healthcare and supporting women throughout their
+pregnancies.
+
 ## 1. Project Overview
 
 ### 1.1 Problem Statement

@@ -1,6 +1,8 @@
 ---
 title: "Machine Learning 2: Maternal Health Risk Classification"
 author: "Aisha, Mufaddal, Raju Ahmed"
+abstract: |
+  Maternal health is a major challenge in Bangladesh, particularly in rural areas where healthcare is hard to access. Many pregnant women suffer from conditions like high blood pressure and infections that go unnoticed due to a lack of medical facilities and trained professionals. Early marriages, limited education, and poverty add to the problem. Women often cannot reach healthcare centers in time, leading to complications which increases the risk associated with the same. This project develops machine learning models to predict maternal health risk using vital health indicators, enabling early identification of high-risk pregnancies.
 date: "`r Sys.Date()`"
 output:
   pdf_document:
@@ -45,7 +47,7 @@ The Maternal Health Risk dataset was collected from hospitals in rural Banglades
 
 ```{r load-packages}
 library(tidyverse); library(caret); library(randomForest); library(e1071)
-library(corrplot); library(knitr); library(kableExtra); library(gridExtra)
+library(corrplot); library(knitr); library(gridExtra)
 library(iml); library(pdp); library(lime); library(pROC); library(rpart)
 ```
 
@@ -128,8 +130,7 @@ summary_stats <- data_clean %>%
   pivot_longer(everything(), names_to = c("Variable", "Stat"), names_sep = "_") %>%
   pivot_wider(names_from = Stat, values_from = value)
 
-kable(summary_stats, caption = "Summary Statistics of Predictor Variables", format = "latex", booktabs = TRUE) %>%
-  kable_styling(latex_options = c("striped", "hold_position"), full_width = FALSE, font_size = 9)
+kable(summary_stats, caption = "Summary Statistics of Predictor Variables", format = "markdown")
 ```
 
 # Mathematical Overview
@@ -179,15 +180,47 @@ The RBF kernel maps data to infinite-dimensional space, enabling non-linear deci
 
 ```{r data-split-cv}
 set.seed(123)
+# Split: 80% training (for CV-based hyperparameter tuning), 20% test
+# As per professor's guidelines: when using cross-validation for hyperparameters,
+# training and validation data can be combined (60% + 20% = 80%)
 train_index <- createDataPartition(data_clean$RiskLevel, p = 0.8, list = FALSE)
-train_data <- data_clean[train_index, ]
+train_data_unbalanced <- data_clean[train_index, ]
 test_data <- data_clean[-train_index, ]
+
+# Check class imbalance
+cat("Original Training Data Class Distribution:\n")
+print(table(train_data_unbalanced$RiskLevel))
+```
+
+**Data Split Strategy:** Following professor's guidelines, since we use 10-fold cross-validation for hyperparameter tuning, we combine training and validation sets (60% + 20% = 80%). The test set (20%) is held out exclusively for final model comparison.
+
+## Handling Class Imbalance
+
+The dataset shows class imbalance (~27% HighRisk vs ~73% NotHighRisk). To prevent bias toward the majority class, we apply **oversampling** to balance the training data.
+
+```{r balance-data}
+# Separate majority and minority classes
+majority_class <- train_data_unbalanced[train_data_unbalanced$RiskLevel == "NotHighRisk", ]
+minority_class <- train_data_unbalanced[train_data_unbalanced$RiskLevel == "HighRisk", ]
+
+# Oversample the minority class (HighRisk) to match majority class size
+set.seed(123)
+minority_oversampled <- minority_class[sample(1:nrow(minority_class), nrow(majority_class), replace = TRUE), ]
+
+# Combine oversampled minority with majority class
+train_data <- rbind(majority_class, minority_oversampled)
+
+# Shuffle the balanced dataset
+train_data <- train_data[sample(1:nrow(train_data)), ]
+
+cat("Balanced Training Data Class Distribution:\n")
+print(table(train_data$RiskLevel))
 
 cv_control <- trainControl(method = "cv", number = 10, classProbs = TRUE,
                            summaryFunction = twoClassSummary, savePredictions = "final")
 ```
 
-Stratified 80/20 split: **`r nrow(train_data)` training**, **`r nrow(test_data)` test** observations. 10-fold CV used for hyperparameter tuning with AUC-ROC as the optimization metric.
+After oversampling, the training data is balanced with equal representation of both classes. This ensures the models learn to identify high-risk cases effectively without being biased toward the majority class. The test set remains **unbalanced** to reflect real-world class distribution for fair evaluation.
 
 ## Model Training
 
@@ -229,6 +262,20 @@ cat("2.", cv_results$Model[2], ":", round(cv_results$CV_AUC[2], 4), "\n")
 cat("3.", cv_results$Model[3], ":", round(cv_results$CV_AUC[3], 4), "\n")
 cat("\nBest 2 models selected: Random Forest and SVM\n")
 ```
+
+**Why Random Forest and SVM?**
+
+We selected these two models based on multiple criteria:
+
+1. **Cross-Validation Performance:** Random Forest achieved the highest CV AUC-ROC, followed by SVM. Decision Tree showed lower performance, likely due to its tendency to overfit without ensemble averaging.
+
+2. **Algorithmic Diversity:** RF and SVM represent fundamentally different approaches:
+   - **Random Forest:** Ensemble of decision trees using bagging and feature randomization. Handles non-linear relationships naturally and provides built-in feature importance.
+   - **SVM:** Finds optimal separating hyperplane in transformed feature space using the RBF kernel. Effective for smaller datasets and robust to outliers due to margin maximization.
+
+3. **Complementary Strengths:** RF excels at capturing complex feature interactions, while SVM with RBF kernel provides smooth decision boundaries. Comparing both allows us to assess whether findings are model-specific or generalizable.
+
+4. **Clinical Applicability:** Both models support probability outputs needed for risk stratification, and both can be interpreted using model-agnostic XAI techniques (feature importance, PDPs, LIME).
 
 ```{r tuning-plots, fig.height=3, fig.cap="Hyperparameter Tuning Results (Best 2 Models)"}
 p1 <- plot(rf_model, main = "Random Forest: mtry")
@@ -288,8 +335,7 @@ metrics_df <- data.frame(
   )
 )
 
-kable(metrics_df, caption = "Test Set Performance Metrics (in percentage)", format = "latex", booktabs = TRUE) %>%
-  kable_styling(latex_options = c("striped", "hold_position"), full_width = FALSE, font_size = 10)
+kable(metrics_df, caption = "Test Set Performance Metrics (in percentage)", format = "markdown")
 ```
 
 ```{r roc-and-barplot, fig.height=3.5, fig.cap="ROC Curves and Performance Comparison"}
@@ -356,42 +402,70 @@ Both models rank **Blood Sugar (BS)** as the most important feature, followed by
 
 ## Partial Dependence Plots
 
-Partial Dependence Plots (PDPs) show the marginal effect of a feature on the predicted outcome, averaging over all other features.
+Partial Dependence Plots (PDPs) show the marginal effect of a feature on the predicted outcome, averaging over all other features. We compare PDPs for both Random Forest and SVM models.
 
-```{r pdp, fig.height=4, fig.cap="Partial Dependence Plots: Effect of Top 3 Features on High Risk Probability"}
+```{r pdp-rf, fig.height=3.5, fig.cap="Random Forest: Partial Dependence Plots for Top 3 Features"}
 predictor_rf <- Predictor$new(model = rf_model, data = train_data[, 1:6],
                                y = train_data$RiskLevel, type = "prob", class = "HighRisk")
 
-pdp_bs <- FeatureEffect$new(predictor_rf, feature = "BS", method = "pdp")
-pdp_age <- FeatureEffect$new(predictor_rf, feature = "Age", method = "pdp")
-pdp_sbp <- FeatureEffect$new(predictor_rf, feature = "SystolicBP", method = "pdp")
+pdp_bs_rf <- FeatureEffect$new(predictor_rf, feature = "BS", method = "pdp")
+pdp_age_rf <- FeatureEffect$new(predictor_rf, feature = "Age", method = "pdp")
+pdp_sbp_rf <- FeatureEffect$new(predictor_rf, feature = "SystolicBP", method = "pdp")
 
-p1 <- plot(pdp_bs) + labs(title = "Blood Sugar", y = "P(HighRisk)") + theme_minimal(base_size = 9)
-p2 <- plot(pdp_age) + labs(title = "Age", y = "P(HighRisk)") + theme_minimal(base_size = 9)
-p3 <- plot(pdp_sbp) + labs(title = "Systolic BP", y = "P(HighRisk)") + theme_minimal(base_size = 9)
+p1 <- plot(pdp_bs_rf) + labs(title = "RF: Blood Sugar", y = "P(HighRisk)") + theme_minimal(base_size = 9)
+p2 <- plot(pdp_age_rf) + labs(title = "RF: Age", y = "P(HighRisk)") + theme_minimal(base_size = 9)
+p3 <- plot(pdp_sbp_rf) + labs(title = "RF: Systolic BP", y = "P(HighRisk)") + theme_minimal(base_size = 9)
 
 grid.arrange(p1, p2, p3, ncol = 3)
 ```
 
-**Interpretation:**
+```{r pdp-svm, fig.height=3.5, fig.cap="SVM: Partial Dependence Plots for Top 3 Features"}
+predictor_svm_pdp <- Predictor$new(model = svm_model, data = train_scaled[, 1:6],
+                                    y = train_scaled$RiskLevel, type = "prob", class = "HighRisk")
 
-- **Blood Sugar (BS):** Strong positive relationship - risk increases sharply above 8 mmol/L, indicating a clinical threshold
-- **Age:** Moderate positive effect - older maternal age associated with higher risk
-- **Systolic BP:** Non-linear relationship - risk increases substantially above 130 mmHg (hypertension threshold)
+pdp_bs_svm <- FeatureEffect$new(predictor_svm_pdp, feature = "BS", method = "pdp")
+pdp_age_svm <- FeatureEffect$new(predictor_svm_pdp, feature = "Age", method = "pdp")
+pdp_sbp_svm <- FeatureEffect$new(predictor_svm_pdp, feature = "SystolicBP", method = "pdp")
+
+p1 <- plot(pdp_bs_svm) + labs(title = "SVM: Blood Sugar", y = "P(HighRisk)") + theme_minimal(base_size = 9)
+p2 <- plot(pdp_age_svm) + labs(title = "SVM: Age", y = "P(HighRisk)") + theme_minimal(base_size = 9)
+p3 <- plot(pdp_sbp_svm) + labs(title = "SVM: Systolic BP", y = "P(HighRisk)") + theme_minimal(base_size = 9)
+
+grid.arrange(p1, p2, p3, ncol = 3)
+```
+
+**PDP Comparison:**
+
+- **Blood Sugar (BS):** Both models show strong positive relationship. RF shows step-like pattern (tree-based), while SVM shows smoother transitions due to the RBF kernel.
+- **Age:** Both models show moderate positive effect, with RF displaying more abrupt changes and SVM showing gradual increase.
+- **Systolic BP:** Both identify ~130 mmHg as a risk threshold, but SVM captures a more continuous relationship.
 
 ## Local Explanations (LIME)
 
-```{r lime, fig.height=3.5, fig.cap="LIME Explanation for a High-Risk Case"}
-lime_explainer <- lime(train_data[, 1:6], rf_model)
-rf_pred_test <- predict(rf_model, newdata = test_data)
-high_risk_idx <- which(test_data$RiskLevel == "HighRisk" & rf_pred_test == "HighRisk")[1]
+LIME (Local Interpretable Model-agnostic Explanations) provides instance-level explanations by fitting a simple interpretable model locally around a prediction. We compare LIME explanations for both models on the same high-risk case.
 
+```{r lime, fig.height=4, fig.cap="LIME Explanations: RF (left) vs SVM (right) for Same High-Risk Case"}
+# Find a high-risk case correctly predicted by both models
+rf_pred_test <- predict(rf_model, newdata = test_data)
+svm_pred_test <- predict(svm_model, newdata = test_scaled)
+high_risk_idx <- which(test_data$RiskLevel == "HighRisk" & rf_pred_test == "HighRisk" & svm_pred_test == "HighRisk")[1]
+
+# RF LIME
+lime_explainer_rf <- lime(train_data[, 1:6], rf_model)
 set.seed(123)
-lime_exp <- lime::explain(test_data[high_risk_idx, 1:6], lime_explainer, n_labels = 1, n_features = 4)
-lime::plot_features(lime_exp) + labs(title = "LIME: High-Risk Case Explanation") + theme_minimal()
+lime_exp_rf <- lime::explain(test_data[high_risk_idx, 1:6], lime_explainer_rf, n_labels = 1, n_features = 4)
+p1 <- lime::plot_features(lime_exp_rf) + labs(title = "RF: LIME") + theme_minimal(base_size = 9)
+
+# SVM LIME
+lime_explainer_svm <- lime(train_scaled[, 1:6], svm_model)
+set.seed(123)
+lime_exp_svm <- lime::explain(test_scaled[high_risk_idx, 1:6], lime_explainer_svm, n_labels = 1, n_features = 4)
+p2 <- lime::plot_features(lime_exp_svm) + labs(title = "SVM: LIME") + theme_minimal(base_size = 9)
+
+grid.arrange(p1, p2, ncol = 2)
 ```
 
-LIME shows which features contributed most to the prediction for this specific case, providing interpretability for clinical review.
+**LIME Comparison:** Both models identify similar key features for this high-risk case, but with different contribution magnitudes. This consistency across models strengthens confidence in the clinical interpretation.
 
 # Conclusions
 
@@ -426,8 +500,7 @@ final_df <- data.frame(
   )
 )
 
-kable(final_df, caption = "Final Model Comparison Summary", format = "latex", booktabs = TRUE) %>%
-  kable_styling(latex_options = c("striped", "hold_position"), full_width = FALSE, font_size = 10)
+kable(final_df, caption = "Final Model Comparison Summary", format = "markdown")
 ```
 
 ## Key Findings
