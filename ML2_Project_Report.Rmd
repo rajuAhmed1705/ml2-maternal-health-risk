@@ -45,6 +45,8 @@ Maternal mortality remains a critical global health challenge. This project deve
 
 The Maternal Health Risk dataset was collected from hospitals in rural Bangladesh via an IoT-based monitoring system [@UCI_maternal]. It contains 1,014 observations with 6 predictor variables.
 
+**Dataset Source:** [UCI Machine Learning Repository - Maternal Health Risk](https://archive.ics.uci.edu/dataset/863/maternal+health+risk)
+
 ```{r load-packages}
 library(tidyverse); library(caret); library(randomForest); library(e1071)
 library(corrplot); library(knitr); library(gridExtra)
@@ -55,6 +57,15 @@ library(iml); library(pdp); library(lime); library(pROC); library(rpart)
 data <- read.csv("Maternal Health Risk Data Set.csv")
 ```
 
+**Attributes Description:**
+
+- **Age:** Age of the pregnant woman in years, ranging from teenagers to older mothers
+- **SystolicBP / DiastolicBP:** Blood pressure measurements (mmHg), key indicators for hypertension-related complications like preeclampsia
+- **BS (Blood Sugar):** Blood glucose level (mmol/L), important for detecting gestational diabetes
+- **BodyTemp:** Body temperature (°F), elevated values may indicate infections
+- **HeartRate:** Resting heart rate (bpm), abnormal values may signal cardiovascular stress
+- **RiskLevel:** Target variable with three original categories (low, mid, high risk) converted to binary classification
+
 | Variable | Description | Range |
 |----------|-------------|-------|
 | Age | Age of pregnant woman (years) | 10-70 |
@@ -64,6 +75,11 @@ data <- read.csv("Maternal Health Risk Data Set.csv")
 | BodyTemp | Body temperature (°F) | 98-103 |
 | HeartRate | Heart rate (bpm) | 7-90 |
 | RiskLevel | Target: High Risk vs. Not High Risk | 2 classes |
+
+```{r sample-data}
+# Display first 5 rows of the dataset
+kable(head(data, 5), caption = "Sample Data: First 5 Observations", format = "markdown")
+```
 
 # Exploratory Data Analysis
 
@@ -82,7 +98,7 @@ data_clean$RiskLevel <- factor(data_clean$RiskLevel, levels = c("NotHighRisk", "
 The dataset has **no missing values**. Two observations with HeartRate = 7 bpm (physiologically impossible) were removed, leaving **`r nrow(data_clean)` observations**.
 
 ```{r target-and-boxplots, fig.height=4.5, fig.cap="Target Distribution and Predictor Variables by Risk Level"}
-# Create side-by-side plots
+
 p1 <- ggplot(data_clean, aes(x = RiskLevel, fill = RiskLevel)) +
   geom_bar(alpha = 0.8) +
   geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5, size = 3) +
@@ -133,6 +149,29 @@ summary_stats <- data_clean %>%
 kable(summary_stats, caption = "Summary Statistics of Predictor Variables", format = "markdown")
 ```
 
+# Model Selection Rationale
+
+Before diving into the mathematical foundations, we explain our choice of models for this classification task.
+
+## Why Random Forest and SVM?
+
+For maternal health risk classification, we evaluated three candidate models: Random Forest, Decision Tree, and Support Vector Machine. Our final selection of **Random Forest and SVM** is based on the following considerations:
+
+**1. Performance-Based Selection:**
+We trained all three models using 10-fold cross-validation and compared their AUC-ROC scores. Random Forest achieved the highest performance, followed by SVM, while Decision Tree showed lower performance due to its tendency to overfit without ensemble averaging.
+
+**2. Algorithmic Diversity:**
+RF and SVM represent fundamentally different learning paradigms:
+
+- **Random Forest** is an ensemble method combining multiple decision trees through bagging (bootstrap aggregating) and random feature selection. It naturally handles non-linear relationships and provides interpretable feature importance measures.
+- **Support Vector Machine** is a geometric approach that finds the optimal hyperplane separating classes by maximizing the margin. Using the RBF (Radial Basis Function) kernel allows SVM to capture non-linear decision boundaries in the feature space.
+
+**3. Complementary Interpretability:**
+Both models support model-agnostic explainability methods (feature importance, PDPs, LIME), allowing us to compare insights across different algorithmic perspectives. When both models agree on feature importance, we gain higher confidence in clinical interpretations.
+
+**4. Clinical Suitability:**
+Both models output class probabilities, which is essential for medical risk stratification where clinicians need confidence scores rather than just binary predictions.
+
 # Mathematical Overview
 
 ## Random Forest
@@ -158,21 +197,30 @@ where $p_k$ is the proportion of class $k$ observations at node $t$. A split is 
 
 ## Support Vector Machine (SVM)
 
-SVM finds the optimal separating hyperplane that maximizes the margin between classes [@james2021introduction]. For non-linearly separable data, the soft-margin SVM solves:
+SVM finds the optimal separating hyperplane that maximizes the margin between classes [@james2021introduction]. For the soft-margin SVM, the optimization problem is:
 
 **Optimization Problem:**
-$$\min_{\beta, \beta_0} \frac{1}{2}||\beta||^2 + C\sum_{i=1}^{n}\xi_i$$
+$$\min_{w, b} \frac{1}{2}||w||^2 + C\sum_{i=1}^{n}\xi_i$$
 
-subject to: $y_i(\beta^T x_i + \beta_0) \geq 1 - \xi_i$ and $\xi_i \geq 0$
+subject to: $y_i(w^T \phi(x_i) + b) \geq 1 - \xi_i$ and $\xi_i \geq 0$
 
-where $C$ controls the trade-off between margin maximization and misclassification penalty, and $\xi_i$ are slack variables.
+where:
+
+- $w$ is the weight vector in the transformed feature space
+- $b$ is the bias term
+- $C$ controls the trade-off between margin maximization and misclassification penalty
+- $\xi_i$ are slack variables allowing soft margin violations
+- $\phi(x)$ is the feature transformation induced by the kernel
 
 **RBF (Radial Basis Function) Kernel:**
-$$K(x_i, x_j) = \exp(-\gamma ||x_i - x_j||^2)$$
+$$K(x_i, x_j) = \exp\left(-\gamma ||x_i - x_j||^2\right)$$
 
-The RBF kernel maps data to infinite-dimensional space, enabling non-linear decision boundaries. Parameter $\gamma$ controls the kernel width: larger $\gamma$ means tighter fit (risk of overfitting).
+The RBF kernel maps data into an infinite-dimensional space, enabling non-linear decision boundaries. It measures similarity between points based on their Euclidean distance, with $\gamma$ controlling the influence radius of individual training examples.
 
-**Key Hyperparameters:** $C$ (cost/regularization), $\gamma$ (kernel width, often denoted as `sigma` in R).
+**Key Hyperparameters:**
+
+- $C$ (cost): Controls regularization - higher values reduce misclassifications but may overfit
+- $\gamma$ (gamma): Controls kernel width - higher values create more complex boundaries
 
 # Model Fitting and Comparison
 
@@ -237,14 +285,14 @@ rf_model <- train(RiskLevel ~ ., data = train_data, method = "rf", trControl = c
 dt_model <- train(RiskLevel ~ ., data = train_data, method = "rpart", trControl = cv_control,
                   tuneGrid = expand.grid(cp = c(0.001, 0.01, 0.05, 0.1)), metric = "ROC")
 
-# SVM (requires scaling)
+# SVM with RBF Kernel (requires scaling)
 preProcValues <- preProcess(train_data[, 1:6], method = c("center", "scale"))
 train_scaled <- predict(preProcValues, train_data)
 test_scaled <- predict(preProcValues, test_data)
 
 set.seed(123)
 svm_model <- train(RiskLevel ~ ., data = train_scaled, method = "svmRadial", trControl = cv_control,
-                   tuneGrid = expand.grid(C = c(0.1, 1, 10, 100), sigma = c(0.01, 0.1, 0.5, 1)),
+                   tuneGrid = expand.grid(C = c(0.1, 1, 10), sigma = c(0.01, 0.1, 1)),
                    metric = "ROC")
 ```
 
@@ -263,27 +311,13 @@ cat("3.", cv_results$Model[3], ":", round(cv_results$CV_AUC[3], 4), "\n")
 cat("\nBest 2 models selected: Random Forest and SVM\n")
 ```
 
-**Why Random Forest and SVM?**
-
-We selected these two models based on multiple criteria:
-
-1. **Cross-Validation Performance:** Random Forest achieved the highest CV AUC-ROC, followed by SVM. Decision Tree showed lower performance, likely due to its tendency to overfit without ensemble averaging.
-
-2. **Algorithmic Diversity:** RF and SVM represent fundamentally different approaches:
-   - **Random Forest:** Ensemble of decision trees using bagging and feature randomization. Handles non-linear relationships naturally and provides built-in feature importance.
-   - **SVM:** Finds optimal separating hyperplane in transformed feature space using the RBF kernel. Effective for smaller datasets and robust to outliers due to margin maximization.
-
-3. **Complementary Strengths:** RF excels at capturing complex feature interactions, while SVM with RBF kernel provides smooth decision boundaries. Comparing both allows us to assess whether findings are model-specific or generalizable.
-
-4. **Clinical Applicability:** Both models support probability outputs needed for risk stratification, and both can be interpreted using model-agnostic XAI techniques (feature importance, PDPs, LIME).
-
 ```{r tuning-plots, fig.height=3, fig.cap="Hyperparameter Tuning Results (Best 2 Models)"}
 p1 <- plot(rf_model, main = "Random Forest: mtry")
-p2 <- plot(svm_model, main = "SVM: Cost & Sigma")
+p2 <- plot(svm_model, main = "SVM RBF: C and Sigma")
 grid.arrange(p1, p2, ncol = 2)
 ```
 
-**Best Hyperparameters:** RF: mtry = `r rf_model$bestTune$mtry`; SVM: C = `r svm_model$bestTune$C`, sigma = `r svm_model$bestTune$sigma`
+**Best Hyperparameters:** RF: mtry = `r rf_model$bestTune$mtry`; SVM: C = `r svm_model$bestTune$C`, sigma = `r round(svm_model$bestTune$sigma, 3)`
 
 ## Test Set Evaluation
 
@@ -436,9 +470,9 @@ grid.arrange(p1, p2, p3, ncol = 3)
 
 **PDP Comparison:**
 
-- **Blood Sugar (BS):** Both models show strong positive relationship. RF shows step-like pattern (tree-based), while SVM shows smoother transitions due to the RBF kernel.
-- **Age:** Both models show moderate positive effect, with RF displaying more abrupt changes and SVM showing gradual increase.
-- **Systolic BP:** Both identify ~130 mmHg as a risk threshold, but SVM captures a more continuous relationship.
+- **Blood Sugar (BS):** Both models show strong positive relationship. RF shows step-like pattern (tree-based), while RBF SVM shows smooth non-linear transitions due to its kernel-based decision boundary.
+- **Age:** Both models show moderate positive effect, with RF displaying more abrupt changes and RBF SVM showing smoother curves.
+- **Systolic BP:** Both identify ~130 mmHg as a risk threshold. Both models capture non-linear patterns, with RF showing discrete steps and SVM showing continuous transitions.
 
 ## Local Explanations (LIME)
 
