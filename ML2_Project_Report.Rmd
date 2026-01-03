@@ -3,7 +3,7 @@ title: "Machine Learning 2: Maternal Health Risk Classification"
 author: "Aisha, Mufaddal, Raju Ahmed"
 abstract: |
   Maternal health is a major challenge in Bangladesh, particularly in rural areas where healthcare is hard to access. Many pregnant women suffer from conditions like high blood pressure and infections that go unnoticed due to a lack of medical facilities and trained professionals. Early marriages, limited education, and poverty add to the problem. Women often cannot reach healthcare centers in time, leading to complications which increases the risk associated with the same. This project develops machine learning models to predict maternal health risk using vital health indicators, enabling early identification of high-risk pregnancies.
-date: "`r Sys.Date()`"
+date: ""
 output:
   pdf_document:
     toc: true
@@ -160,14 +160,20 @@ Random Forest is an ensemble learning method that constructs multiple decision t
 **Prediction Formula:**
 $$\hat{f}(x) = \text{mode}\{h_1(x), h_2(x), ..., h_B(x)\}$$
 
-where $h_b(x)$ is the prediction of tree $b$ and $B$ is the total number of trees.
+where $h_b(x)$ is the prediction of tree $b$ and $B$ is the total number of trees (controlled by the `ntree` hyperparameter).
 
 **Split Criterion - Gini Impurity:**
 $$G(t) = 1 - \sum_{k=1}^{K} p_k^2$$
 
 where $p_k$ is the proportion of class $k$ observations at node $t$. A split is chosen to maximize the reduction in impurity.
 
-**Key Hyperparameters:** `ntree` (number of trees), `mtry` (features per split), `nodesize` (minimum node size).
+**Key Hyperparameters:**
+
+- **`ntree`**: How many trees to grow. Adding more trees helps up to a point, but after around 500 the gains become negligible.
+
+- **`mtry`**: At each split, only a random subset of features is considered. This keeps the trees different from each other. The default for classification is $\sqrt{p}$.
+
+- **`nodesize`**: The smallest allowed leaf size. Letting leaves get very small (default is 1) can overfit the training data.
 
 ## Support Vector Machine (SVM)
 
@@ -197,9 +203,7 @@ With respect to the dataset we have, it is not possible to separate it using a s
 
 ```{r data-split-cv}
 set.seed(123)
-# Split: 80% training (for CV-based hyperparameter tuning), 20% test
-# As per professor's guidelines: when using cross-validation for hyperparameters,
-# training and validation data can be combined (60% + 20% = 80%)
+
 train_index <- createDataPartition(data_clean$RiskLevel, p = 0.8, list = FALSE)
 train_data_unbalanced <- data_clean[train_index, ]
 test_data <- data_clean[-train_index, ]
@@ -243,7 +247,9 @@ After oversampling, the training data is balanced with equal representation of b
 
 We trained Random Forest and SVM models using 10-fold cross-validation with AUC-ROC as the optimization metric.
 
-```{r train-all-models}
+For Random Forest, we set `ntree = 500` and tuned `mtry` over values 2, 3, 4, and 5 to find the best number of features considered at each split. For SVM, we tuned `C` (cost) over 0.1, 1, and 10, and `sigma` over 0.01, 0.1, and 1 to control the margin flexibility and RBF kernel width.
+
+```{r train-all-models, echo=TRUE}
 set.seed(123)
 # Random Forest
 rf_model <- train(RiskLevel ~ ., data = train_data, method = "rf", trControl = cv_control,
@@ -274,45 +280,27 @@ cat("Random Forest:", round(max(rf_model$results$ROC), 4), "\n")
 cat("SVM:", round(max(svm_model$results$ROC), 4), "\n")
 ```
 
-```{r tuning-plots, fig.height=3, fig.cap="Hyperparameter Tuning Results (Best 2 Models)"}
+```{r tuning-plots, fig.height=3, fig.cap="Hyperparameter Tuning Results"}
 p1 <- plot(rf_model, main = "Random Forest: mtry")
 p2 <- plot(svm_model, main = "SVM RBF: C and Sigma")
 grid.arrange(p1, p2, ncol = 2)
 ```
 
+The left plot shows how cross-validated AUC changes with different `mtry` values for Random Forest. The right plot shows SVM performance across combinations of C and sigma — each line represents a different sigma value.
+
 **Best Hyperparameters:** RF: mtry = `r rf_model$bestTune$mtry`; SVM: C = `r svm_model$bestTune$C`, sigma = `r round(svm_model$bestTune$sigma, 3)`
 
 ## Test Set Evaluation
 
-```{r test-evaluation, fig.height=3.5, fig.cap="Confusion Matrices: Random Forest (left) and SVM (right)"}
+Both models are tested on unseen data to check how well they perform.
+
+```{r test-evaluation}
 rf_pred <- predict(rf_model, newdata = test_data)
 svm_pred <- predict(svm_model, newdata = test_scaled)
 
 rf_cm <- confusionMatrix(rf_pred, test_data$RiskLevel)
 svm_cm <- confusionMatrix(svm_pred, test_scaled$RiskLevel)
 
-# Plot confusion matrices side by side
-library(ggplot2)
-library(gridExtra)
-
-plot_cm <- function(cm, title, color) {
-  cm_df <- as.data.frame(cm$table)
-  colnames(cm_df) <- c("Prediction", "Reference", "Freq")
-  ggplot(cm_df, aes(x = Reference, y = Prediction, fill = Freq)) +
-    geom_tile(color = "white", size = 1) +
-    geom_text(aes(label = Freq), size = 6, fontface = "bold") +
-    scale_fill_gradient(low = "white", high = color) +
-    labs(title = title, x = "Actual", y = "Predicted") +
-    theme_minimal(base_size = 10) +
-    theme(legend.position = "none", plot.title = element_text(face = "bold", hjust = 0.5, size = 10))
-}
-
-p1 <- plot_cm(rf_cm, paste0("RF (Acc:", round(rf_cm$overall["Accuracy"]*100,1), "%)"), "#3498db")
-p2 <- plot_cm(svm_cm, paste0("SVM (Acc:", round(svm_cm$overall["Accuracy"]*100,1), "%)"), "#9b59b6")
-grid.arrange(p1, p2, ncol = 2)
-```
-
-```{r metrics-table}
 # Metrics table
 metrics_df <- data.frame(
   Metric = c("Accuracy", "Sensitivity", "Specificity", "Precision", "F1 Score"),
@@ -335,23 +323,47 @@ metrics_df <- data.frame(
 kable(metrics_df, caption = "Test Set Performance Metrics (in percentage)", format = "markdown")
 ```
 
-```{r roc-and-barplot, fig.height=3.5, fig.cap="ROC Curves and Performance Comparison"}
+```{r cm-and-roc, fig.height=2.8, fig.width=8.5, fig.cap="Confusion Matrices and ROC Curves"}
+# Confusion matrix heatmaps
+plot_cm <- function(cm, title) {
+  cm_df <- as.data.frame(cm$table)
+  colnames(cm_df) <- c("Predicted", "Actual", "n")
+  ggplot(cm_df, aes(x = Actual, y = Predicted, fill = n)) +
+    geom_tile(color = "white") +
+    geom_text(aes(label = n), size = 3.5, fontface = "bold") +
+    scale_fill_gradient(low = "#f7f7f7", high = "#2c7fb8") +
+    labs(title = title) +
+    theme_minimal(base_size = 8) +
+    theme(legend.position = "none",
+          plot.title = element_text(hjust = 0.5, size = 9),
+          axis.title = element_text(size = 7))
+}
+
+p1 <- plot_cm(rf_cm, "RF Confusion Matrix")
+p2 <- plot_cm(svm_cm, "SVM Confusion Matrix")
+
+# ROC curve as ggplot
 rf_probs <- predict(rf_model, newdata = test_data, type = "prob")
 svm_probs <- predict(svm_model, newdata = test_scaled, type = "prob")
-
 roc_rf <- roc(test_data$RiskLevel, rf_probs$HighRisk, levels = c("NotHighRisk", "HighRisk"))
 roc_svm <- roc(test_scaled$RiskLevel, svm_probs$HighRisk, levels = c("NotHighRisk", "HighRisk"))
 
-par(mfrow = c(1, 2))
-# ROC Plot
-plot(roc_rf, col = "#3498db", lwd = 2, main = "ROC Curves")
-plot(roc_svm, col = "#9b59b6", lwd = 2, add = TRUE)
-legend("bottomright", legend = c(paste0("RF (AUC=", round(auc(roc_rf), 3), ")"),
-                                  paste0("SVM (AUC=", round(auc(roc_svm), 3), ")")),
-       col = c("#3498db", "#9b59b6"), lwd = 2, cex = 0.8)
-abline(a = 0, b = 1, lty = 2, col = "gray")
+roc_data <- rbind(
+  data.frame(FPR = 1 - roc_rf$specificities, TPR = roc_rf$sensitivities, Model = paste0("RF (AUC=", round(auc(roc_rf), 3), ")")),
+  data.frame(FPR = 1 - roc_svm$specificities, TPR = roc_svm$sensitivities, Model = paste0("SVM (AUC=", round(auc(roc_svm), 3), ")"))
+)
 
-par(mfrow = c(1, 1))
+p3 <- ggplot(roc_data, aes(x = FPR, y = TPR, color = Model)) +
+  geom_line(size = 1) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray") +
+  labs(title = "ROC Curves", x = "False Positive Rate", y = "True Positive Rate") +
+  scale_color_manual(values = c("#3498db", "#9b59b6")) +
+  theme_minimal(base_size = 8) +
+  theme(legend.position = "bottom", legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.5, size = 9),
+        legend.text = element_text(size = 7))
+
+grid.arrange(p1, p2, p3, ncol = 3, widths = c(1, 1, 1.3))
 ```
 
 # Interpretable Machine Learning (XAI)
