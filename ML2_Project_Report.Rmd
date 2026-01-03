@@ -121,7 +121,7 @@ p2 <- ggplot(data_long, aes(x = RiskLevel, y = Value, fill = RiskLevel)) +
 grid.arrange(p1, p2, ncol = 2, widths = c(1, 2))
 ```
 
-**Key Observations:** Blood Sugar (BS) and Systolic BP are strong discriminators for high-risk cases. Class imbalance (~27% HighRisk) is addressed using stratified sampling.
+**Key Observations:** From the boxplots, we can see that high-risk pregnancies tend to have elevated Blood Sugar (BS) and Systolic BP levels compared to non-high-risk cases. Since only about 27% of cases are high-risk, we use stratified sampling to ensure both classes are well-represented during training.
 
 ```{r correlation, fig.height=3, fig.cap="Correlation Matrix"}
 cor_matrix <- cor(data_clean[, 1:6])
@@ -129,7 +129,7 @@ corrplot(cor_matrix, method = "color", type = "upper", addCoef.col = "black",
          number.cex = 0.6, tl.col = "black", tl.srt = 45, tl.cex = 0.7, mar = c(0,0,1,0))
 ```
 
-No severe multicollinearity detected. Systolic and Diastolic BP show expected moderate correlation.
+The correlation matrix shows no severe multicollinearity among the predictors. Systolic and Diastolic blood pressure show a moderate positive correlation (r = 0.79), which is expected as both measure arterial pressure during different phases of the cardiac cycle [@franklin1999pulse].
 
 ## Summary Statistics
 
@@ -149,39 +149,13 @@ summary_stats <- data_clean %>%
 kable(summary_stats, caption = "Summary Statistics of Predictor Variables", format = "markdown")
 ```
 
-# Model Selection Rationale
+# Model Selection and Mathematical Overview
 
-Before diving into the mathematical foundations, we explain our choice of models for this classification task.
-
-## Why Random Forest and SVM?
-
-For maternal health risk classification, we evaluated three candidate models: Random Forest, Decision Tree, and Support Vector Machine. Our final selection of **Random Forest and SVM** is based on the following considerations:
-
-**1. Performance-Based Selection:**
-We trained all three models using 10-fold cross-validation and compared their AUC-ROC scores. Random Forest achieved the highest performance, followed by SVM, while Decision Tree showed lower performance due to its tendency to overfit without ensemble averaging.
-
-**2. Algorithmic Diversity:**
-RF and SVM represent fundamentally different learning paradigms:
-
-- **Random Forest** is an ensemble method combining multiple decision trees through bagging (bootstrap aggregating) and random feature selection. It naturally handles non-linear relationships and provides interpretable feature importance measures.
-- **Support Vector Machine** is a geometric approach that finds the optimal hyperplane separating classes by maximizing the margin. Using the RBF (Radial Basis Function) kernel allows SVM to capture non-linear decision boundaries in the feature space.
-
-**3. Complementary Interpretability:**
-Both models support model-agnostic explainability methods (feature importance, PDPs, LIME), allowing us to compare insights across different algorithmic perspectives. When both models agree on feature importance, we gain higher confidence in clinical interpretations.
-
-**4. Clinical Suitability:**
-Both models output class probabilities, which is essential for medical risk stratification where clinicians need confidence scores rather than just binary predictions.
-
-# Mathematical Overview
+By looking at the target variable, this is a binary classification problem. We decided to implement Random Forest and SVM models.
 
 ## Random Forest
 
-Random Forest is an ensemble learning method that constructs multiple decision trees during training [@breiman2001random]. The algorithm works as follows:
-
-1. **Bootstrap Sampling**: For each tree, draw a bootstrap sample (with replacement) from the training data
-2. **Feature Randomization**: At each node split, only consider a random subset of $m = \sqrt{p}$ features
-3. **Tree Construction**: Build each tree to maximum depth without pruning
-4. **Aggregation**: Combine predictions via majority voting (classification)
+Random Forest is an ensemble learning method that constructs multiple decision trees during training [@breiman2001random]. For each tree in the forest, a bootstrap sample is drawn with replacement from the training data. During the construction of each tree, only a random subset of $m = \sqrt{p}$ features is considered at each node split, introducing additional randomness beyond the bootstrap sampling. Each tree is grown to maximum depth without pruning, allowing it to capture complex patterns in the data. Finally, predictions from all trees are combined through majority voting for classification tasks.
 
 **Prediction Formula:**
 $$\hat{f}(x) = \text{mode}\{h_1(x), h_2(x), ..., h_B(x)\}$$
@@ -197,30 +171,25 @@ where $p_k$ is the proportion of class $k$ observations at node $t$. A split is 
 
 ## Support Vector Machine (SVM)
 
-SVM finds the optimal separating hyperplane that maximizes the margin between classes [@james2021introduction]. For the soft-margin SVM, the optimization problem is:
+A Support Vector Machine (SVM) is a supervised learning method primarily used for binary classification, though it can be extended to multiple classes. Mathematically, it works by identifying a hyperplane that serves as a boundary between different regions in a feature space. To find the "optimal" hyperplane, SVM seeks which is the boundary furthest away from the nearest data points. The distance between the boundary and the nearest points is called the margin.
 
-**Optimization Problem:**
-$$\min_{w, b} \frac{1}{2}||w||^2 + C\sum_{i=1}^{n}\xi_i$$
+**Non-Linear SVM**
 
-subject to: $y_i(w^T \phi(x_i) + b) \geq 1 - \xi_i$ and $\xi_i \geq 0$
+When data cannot be separated by a straight line or plane, a linear boundary is insufficient. Non-linear SVMs address this by expanding the feature space.
 
-where:
+**The Kernel Trick:** Rather than explicitly calculating the coordinates in a massive or infinite-dimensional space—which is computationally expensive—SVMs use kernel functions. This "trick" calculates the similarity between data points as if they were in a higher-dimensional space without actually performing the transformation.
 
-- $w$ is the weight vector in the transformed feature space
-- $b$ is the bias term
-- $C$ controls the trade-off between margin maximization and misclassification penalty
-- $\xi_i$ are slack variables allowing soft margin violations
-- $\phi(x)$ is the feature transformation induced by the kernel
-
-**RBF (Radial Basis Function) Kernel:**
+**Radial Basis Function (RBF) Kernel:**
 $$K(x_i, x_j) = \exp\left(-\gamma ||x_i - x_j||^2\right)$$
 
-The RBF kernel maps data into an infinite-dimensional space, enabling non-linear decision boundaries. It measures similarity between points based on their Euclidean distance, with $\gamma$ controlling the influence radius of individual training examples.
+With respect to the dataset we have, it is not possible to separate it using a straight line, hence the Non-Linear SVM approach.
 
-**Key Hyperparameters:**
+**Hyperparameter Tuning:**
 
-- $C$ (cost): Controls regularization - higher values reduce misclassifications but may overfit
-- $\gamma$ (gamma): Controls kernel width - higher values create more complex boundaries
+- **C (Cost/Budget):** This is a general hyperparameter used in the Support Vector Classifier (soft margin) algorithm, which also applies to non-linear SVMs. It acts as a budget for the total amount of "slack" allowed for observations to fall on the wrong side of the margin or hyperplane.
+- **γ (Gamma):** Defines the influence of a single training example. A low gamma makes the influence of each training point large, while a high gamma makes it small.
+
+**Model Evaluation:** Confusion matrix and ROC-AUC curves can help us to evaluate classification problems.
 
 # Model Fitting and Comparison
 
@@ -272,7 +241,7 @@ After oversampling, the training data is balanced with equal representation of b
 
 ## Model Training
 
-We trained three models (Random Forest, Decision Tree, SVM) and selected the **best 2 based on CV AUC-ROC** for final comparison.
+We trained Random Forest and SVM models using 10-fold cross-validation with AUC-ROC as the optimization metric.
 
 ```{r train-all-models}
 set.seed(123)
@@ -280,10 +249,6 @@ set.seed(123)
 rf_model <- train(RiskLevel ~ ., data = train_data, method = "rf", trControl = cv_control,
                   tuneGrid = expand.grid(mtry = c(2, 3, 4, 5)), ntree = 500,
                   importance = TRUE, metric = "ROC")
-
-# Decision Tree (for model selection only)
-dt_model <- train(RiskLevel ~ ., data = train_data, method = "rpart", trControl = cv_control,
-                  tuneGrid = expand.grid(cp = c(0.001, 0.01, 0.05, 0.1)), metric = "ROC")
 
 # SVM with RBF Kernel (requires scaling)
 preProcValues <- preProcess(train_data[, 1:6], method = c("center", "scale"))
@@ -299,16 +264,14 @@ svm_model <- train(RiskLevel ~ ., data = train_scaled, method = "svmRadial", trC
 ```{r model-selection}
 # Compare CV AUC-ROC
 cv_results <- data.frame(
-  Model = c("Random Forest", "Decision Tree", "SVM"),
-  CV_AUC = c(max(rf_model$results$ROC), max(dt_model$results$ROC), max(svm_model$results$ROC))
+  Model = c("Random Forest", "SVM"),
+  CV_AUC = c(max(rf_model$results$ROC), max(svm_model$results$ROC))
 )
 cv_results <- cv_results[order(-cv_results$CV_AUC), ]
 
-cat("Model Selection (CV AUC-ROC):\n")
-cat("1.", cv_results$Model[1], ":", round(cv_results$CV_AUC[1], 4), "\n")
-cat("2.", cv_results$Model[2], ":", round(cv_results$CV_AUC[2], 4), "\n")
-cat("3.", cv_results$Model[3], ":", round(cv_results$CV_AUC[3], 4), "\n")
-cat("\nBest 2 models selected: Random Forest and SVM\n")
+cat("Cross-Validation Results (AUC-ROC):\n")
+cat("Random Forest:", round(max(rf_model$results$ROC), 4), "\n")
+cat("SVM:", round(max(svm_model$results$ROC), 4), "\n")
 ```
 
 ```{r tuning-plots, fig.height=3, fig.cap="Hyperparameter Tuning Results (Best 2 Models)"}
@@ -388,23 +351,7 @@ legend("bottomright", legend = c(paste0("RF (AUC=", round(auc(roc_rf), 3), ")"),
        col = c("#3498db", "#9b59b6"), lwd = 2, cex = 0.8)
 abline(a = 0, b = 1, lty = 2, col = "gray")
 
-# Bar plot
-metrics_plot <- data.frame(
-  Metric = rep(c("Accuracy", "Sensitivity", "Specificity"), 2),
-  Model = rep(c("Random Forest", "SVM"), each = 3),
-  Value = c(rf_cm$overall["Accuracy"]*100, rf_cm$byClass["Sensitivity"]*100, rf_cm$byClass["Specificity"]*100,
-            svm_cm$overall["Accuracy"]*100, svm_cm$byClass["Sensitivity"]*100, svm_cm$byClass["Specificity"]*100)
-)
 par(mfrow = c(1, 1))
-```
-
-```{r barplot-ggplot, fig.height=3, fig.cap="Model Performance Comparison"}
-ggplot(metrics_plot, aes(x = Metric, y = Value, fill = Model)) +
-  geom_bar(stat = "identity", position = "dodge", alpha = 0.8) +
-  geom_text(aes(label = round(Value, 1)), position = position_dodge(width = 0.9), vjust = -0.3, size = 3) +
-  scale_fill_manual(values = c("Random Forest" = "#3498db", "SVM" = "#9b59b6")) +
-  labs(y = "Percentage (%)", x = "") + theme_minimal() + theme(legend.position = "bottom") +
-  ylim(0, 105)
 ```
 
 # Interpretable Machine Learning (XAI)
@@ -505,7 +452,7 @@ grid.arrange(p1, p2, ncol = 2)
 
 ## Summary
 
-We trained three machine learning models (Random Forest, Decision Tree, SVM) and selected the **best 2 (Random Forest and SVM)** based on cross-validation AUC-ROC performance. Both selected models achieve strong performance in detecting high-risk pregnancies using binary classification.
+We trained Random Forest and SVM models for maternal health risk classification. Both models achieve strong performance in detecting high-risk pregnancies using binary classification.
 
 ## Model Comparison Results
 
