@@ -300,8 +300,8 @@ Both models are tested on unseen data to check how well they perform.
 rf_pred <- predict(rf_model, newdata = test_data)
 svm_pred <- predict(svm_model, newdata = test_scaled)
 
-rf_cm <- confusionMatrix(rf_pred, test_data$RiskLevel)
-svm_cm <- confusionMatrix(svm_pred, test_scaled$RiskLevel)
+rf_cm <- confusionMatrix(rf_pred, test_data$RiskLevel, positive = "HighRisk")
+svm_cm <- confusionMatrix(svm_pred, test_scaled$RiskLevel, positive = "HighRisk")
 
 # Metrics table
 metrics_df <- data.frame(
