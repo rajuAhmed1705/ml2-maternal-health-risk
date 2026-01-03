@@ -13,10 +13,13 @@ output:
     latex_engine: xelatex
 bibliography: references.bib
 geometry: margin=0.7in
+fontsize: 11pt
 header-includes:
   - \usepackage{float}
   - \floatplacement{figure}{H}
   - \usepackage{multicol}
+  - \usepackage{fvextra}
+  - \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
 ---
 
 ```{r setup, include=FALSE}
@@ -378,7 +381,7 @@ In this section, the post-hoc interpretability techniques are applied to the dev
 
 ## Feature Importance
 
-```{r feature-importance, fig.height=3, fig.cap="Feature Importance Comparison"}
+```{r feature-importance, fig.height=2.5, fig.cap="Feature Importance Comparison"}
 rf_final <- rf_model$finalModel
 rf_imp <- importance(rf_final)
 rf_imp_df <- data.frame(Feature = rownames(rf_imp), Importance = rf_imp[, "MeanDecreaseGini"])
@@ -426,15 +429,11 @@ grid.arrange(p1, p2, p3, ncol = 3)
 
 The PDPs show that higher Blood Sugar and Systolic BP values increase the probability of high-risk classification. Age shows a moderate positive effect, with risk increasing for older patients.
 
-```{=latex}
-\clearpage
-```
-
 ## Local Explanations (SHAP)
 
 SHAP (SHapley Additive exPlanations) explains individual predictions using Shapley values from game theory. The Shapley value represents the average marginal contribution of a feature across all possible feature combinations.
 
-```{r shap, fig.height=3, fig.cap="SHAP Waterfall Plots for a High-Risk Case"}
+```{r shap, fig.height=2.5, fig.cap="SHAP Waterfall Plots for a High-Risk Case"}
 library(fastshap)
 library(shapviz)
 
