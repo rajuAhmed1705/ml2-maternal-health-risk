@@ -50,7 +50,8 @@ The Maternal Health Risk dataset was collected from hospitals in rural Banglades
 ```{r load-packages}
 library(tidyverse); library(caret); library(randomForest); library(e1071)
 library(corrplot); library(knitr); library(gridExtra)
-library(iml); library(pdp); library(lime); library(pROC); library(rpart)
+library(iml); library(pdp); library(pROC); library(rpart)
+library(fastshap); library(shapviz)
 ```
 
 ```{r load-data}
@@ -97,12 +98,13 @@ data_clean$RiskLevel <- factor(data_clean$RiskLevel, levels = c("NotHighRisk", "
 
 The dataset has **no missing values**. Two observations with HeartRate = 7 bpm (physiologically impossible) were removed, leaving **`r nrow(data_clean)` observations**.
 
-```{r target-and-boxplots, fig.height=4.5, fig.cap="Target Distribution and Predictor Variables by Risk Level"}
+```{r target-and-boxplots, fig.height=3.2, fig.cap="Target Distribution and Predictor Variables by Risk Level"}
 
 p1 <- ggplot(data_clean, aes(x = RiskLevel, fill = RiskLevel)) +
   geom_bar(alpha = 0.8) +
   geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5, size = 3) +
   scale_fill_manual(values = c("NotHighRisk" = "#2ecc71", "HighRisk" = "#e74c3c")) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
   labs(title = "Target Distribution", x = "", y = "Count") +
   theme_minimal() + theme(legend.position = "none")
 
@@ -247,7 +249,7 @@ After oversampling, the training data is balanced with equal representation of b
 
 We trained Random Forest and SVM models using 10-fold cross-validation with AUC-ROC as the optimization metric.
 
-For Random Forest, we set `ntree = 500` and tuned `mtry` over values 2, 3, 4, and 5 to find the best number of features considered at each split. For SVM, we tuned `C` (cost) over 0.1, 1, and 10, and `sigma` over 0.01, 0.1, and 1 to control the margin flexibility and RBF kernel width.
+For Random Forest, we set `ntree = 500` and tuned `mtry` over values 2, 3, 4, and 5 to find the best number of features considered at each split. We kept `nodesize` at its default value (1) since `mtry` has the most impact on performance. For SVM, we tuned `C` (cost) over 0.1, 1, and 10, and `sigma` over 0.01, 0.1, and 1 to control the margin flexibility and RBF kernel width.
 
 ```{r train-all-models, echo=TRUE}
 set.seed(123)
@@ -366,7 +368,13 @@ p3 <- ggplot(roc_data, aes(x = FPR, y = TPR, color = Model)) +
 grid.arrange(p1, p2, p3, ncol = 3, widths = c(1, 1, 1.3))
 ```
 
+**Overfitting Check:** To ensure our models generalize well, we compare cross-validation AUC with test set AUC. Random Forest shows CV AUC of `r round(max(rf_model$results$ROC), 3)` and test AUC of `r round(auc(roc_rf), 3)`. SVM shows CV AUC of `r round(max(svm_model$results$ROC), 3)` and test AUC of `r round(auc(roc_svm), 3)`. The small gaps between CV and test performance confirm that neither model is overfitting.
+
+Although both methods show good predictive results, machine learning models in the healthcare setting should be interpretable too. It is important to interpret the predictions to ensure trust and appropriateness. In the context of this study, interpretable machine learning methods will be used to interpret the global behavior and predictions of both models.
+
 # Interpretable Machine Learning (XAI)
+
+In this section, the post-hoc interpretability techniques are applied to the developed model of the Random Forest and the Support Vector Machine. Global feature importance and global feature effects are examined. Local interpretability is also explored.
 
 ## Feature Importance
 
@@ -395,9 +403,13 @@ Both models rank **Blood Sugar (BS)** as the most important feature, followed by
 
 ## Partial Dependence Plots
 
-Partial Dependence Plots (PDPs) show the marginal effect of a feature on the predicted outcome, averaging over all other features. We compare PDPs for both Random Forest and SVM models.
+Partial Dependence Plots (PDPs) show the average effect of a feature on the predicted outcome. The PDP value for a feature value $s^*$ is:
 
-```{r pdp-rf, fig.height=3.5, fig.cap="Random Forest: Partial Dependence Plots for Top 3 Features"}
+$$\hat{f}_S(s^*) = \frac{1}{n} \sum_{i=1}^{n} f(S = s^*, C_i)$$
+
+where $C_i$ are the values of all other features for observation $i$.
+
+```{r pdp-rf, fig.height=3, fig.cap="Partial Dependence Plots for Top 3 Features (Random Forest)"}
 predictor_rf <- Predictor$new(model = rf_model, data = train_data[, 1:6],
                                y = train_data$RiskLevel, type = "prob", class = "HighRisk")
 
@@ -405,60 +417,53 @@ pdp_bs_rf <- FeatureEffect$new(predictor_rf, feature = "BS", method = "pdp")
 pdp_age_rf <- FeatureEffect$new(predictor_rf, feature = "Age", method = "pdp")
 pdp_sbp_rf <- FeatureEffect$new(predictor_rf, feature = "SystolicBP", method = "pdp")
 
-p1 <- plot(pdp_bs_rf) + labs(title = "RF: Blood Sugar", y = "P(HighRisk)") + theme_minimal(base_size = 9)
-p2 <- plot(pdp_age_rf) + labs(title = "RF: Age", y = "P(HighRisk)") + theme_minimal(base_size = 9)
-p3 <- plot(pdp_sbp_rf) + labs(title = "RF: Systolic BP", y = "P(HighRisk)") + theme_minimal(base_size = 9)
+p1 <- plot(pdp_bs_rf) + labs(title = "Blood Sugar", y = "P(HighRisk)") + theme_minimal(base_size = 9)
+p2 <- plot(pdp_age_rf) + labs(title = "Age", y = "P(HighRisk)") + theme_minimal(base_size = 9)
+p3 <- plot(pdp_sbp_rf) + labs(title = "Systolic BP", y = "P(HighRisk)") + theme_minimal(base_size = 9)
 
 grid.arrange(p1, p2, p3, ncol = 3)
 ```
 
-```{r pdp-svm, fig.height=3.5, fig.cap="SVM: Partial Dependence Plots for Top 3 Features"}
-predictor_svm_pdp <- Predictor$new(model = svm_model, data = train_scaled[, 1:6],
-                                    y = train_scaled$RiskLevel, type = "prob", class = "HighRisk")
+The PDPs show that higher Blood Sugar and Systolic BP values increase the probability of high-risk classification. Age shows a moderate positive effect, with risk increasing for older patients.
 
-pdp_bs_svm <- FeatureEffect$new(predictor_svm_pdp, feature = "BS", method = "pdp")
-pdp_age_svm <- FeatureEffect$new(predictor_svm_pdp, feature = "Age", method = "pdp")
-pdp_sbp_svm <- FeatureEffect$new(predictor_svm_pdp, feature = "SystolicBP", method = "pdp")
+\newpage
 
-p1 <- plot(pdp_bs_svm) + labs(title = "SVM: Blood Sugar", y = "P(HighRisk)") + theme_minimal(base_size = 9)
-p2 <- plot(pdp_age_svm) + labs(title = "SVM: Age", y = "P(HighRisk)") + theme_minimal(base_size = 9)
-p3 <- plot(pdp_sbp_svm) + labs(title = "SVM: Systolic BP", y = "P(HighRisk)") + theme_minimal(base_size = 9)
+## Local Explanations (SHAP)
 
-grid.arrange(p1, p2, p3, ncol = 3)
-```
+SHAP (SHapley Additive exPlanations) explains individual predictions using Shapley values from game theory. The Shapley value represents the average marginal contribution of a feature across all possible feature combinations.
 
-**PDP Comparison:**
+```{r shap, fig.height=3, fig.cap="SHAP Waterfall Plots for a High-Risk Case"}
+library(fastshap)
+library(shapviz)
 
-- **Blood Sugar (BS):** Both models show strong positive relationship. RF shows step-like pattern (tree-based), while RBF SVM shows smooth non-linear transitions due to its kernel-based decision boundary.
-- **Age:** Both models show moderate positive effect, with RF displaying more abrupt changes and RBF SVM showing smoother curves.
-- **Systolic BP:** Both identify ~130 mmHg as a risk threshold. Both models capture non-linear patterns, with RF showing discrete steps and SVM showing continuous transitions.
-
-## Local Explanations (LIME)
-
-LIME (Local Interpretable Model-agnostic Explanations) provides instance-level explanations by fitting a simple interpretable model locally around a prediction. We compare LIME explanations for both models on the same high-risk case.
-
-```{r lime, fig.height=4, fig.cap="LIME Explanations: RF (left) vs SVM (right) for Same High-Risk Case"}
-# Find a high-risk case correctly predicted by both models
+# Find a high-risk case correctly predicted by RF
 rf_pred_test <- predict(rf_model, newdata = test_data)
-svm_pred_test <- predict(svm_model, newdata = test_scaled)
-high_risk_idx <- which(test_data$RiskLevel == "HighRisk" & rf_pred_test == "HighRisk" & svm_pred_test == "HighRisk")[1]
+high_risk_idx <- which(test_data$RiskLevel == "HighRisk" & rf_pred_test == "HighRisk")[1]
 
-# RF LIME
-lime_explainer_rf <- lime(train_data[, 1:6], rf_model)
+# Prediction function for SHAP
+pred_fun <- function(object, newdata) {
+  predict(object, newdata = newdata, type = "prob")[, "HighRisk"]
+}
+
+# Calculate SHAP values
 set.seed(123)
-lime_exp_rf <- lime::explain(test_data[high_risk_idx, 1:6], lime_explainer_rf, n_labels = 1, n_features = 4)
-p1 <- lime::plot_features(lime_exp_rf) + labs(title = "RF: LIME") + theme_minimal(base_size = 9)
+shap_values <- fastshap::explain(
+  rf_model,
+  X = train_data[, 1:6],
+  newdata = test_data[high_risk_idx, 1:6, drop = FALSE],
+  pred_wrapper = pred_fun,
+  nsim = 50
+)
 
-# SVM LIME
-lime_explainer_svm <- lime(train_scaled[, 1:6], svm_model)
-set.seed(123)
-lime_exp_svm <- lime::explain(test_scaled[high_risk_idx, 1:6], lime_explainer_svm, n_labels = 1, n_features = 4)
-p2 <- lime::plot_features(lime_exp_svm) + labs(title = "SVM: LIME") + theme_minimal(base_size = 9)
-
-grid.arrange(p1, p2, ncol = 2)
+# Create shapviz object and plot
+baseline <- mean(predict(rf_model, newdata = train_data, type = "prob")[, "HighRisk"])
+sv <- shapviz(shap_values, X = test_data[high_risk_idx, 1:6, drop = FALSE], baseline = baseline)
+sv_waterfall(sv, row_id = 1) +
+  labs(title = "SHAP Waterfall: Why This Case is High-Risk") +
+  theme_minimal(base_size = 10)
 ```
 
-**LIME Comparison:** Both models identify similar key features for this high-risk case, but with different contribution magnitudes. This consistency across models strengthens confidence in the clinical interpretation.
+The waterfall plot shows how each feature contributes to pushing the prediction away from the baseline (average prediction). Features pushing right increase the high-risk probability, while those pushing left decrease it.
 
 # Conclusions
 
