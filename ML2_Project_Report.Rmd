@@ -1,6 +1,6 @@
 ---
 title: "Machine Learning 2: Maternal Health Risk Classification"
-author: "Aisha, Mufaddal, Raju Ahmed"
+author: "Group I: Aisha, Mufaddal, Raju Ahmed"
 abstract: |
   Maternal health is a major challenge in Bangladesh, particularly in rural areas where healthcare is hard to access. Many pregnant women suffer from conditions like high blood pressure and infections that go unnoticed due to a lack of medical facilities and trained professionals. Early marriages, limited education, and poverty add to the problem. Women often cannot reach healthcare centers in time, leading to complications which increases the risk associated with the same. This project develops machine learning models to predict maternal health risk using vital health indicators, enabling early identification of high-risk pregnancies.
 date: ""
@@ -195,7 +195,7 @@ With respect to the dataset we have, it is not possible to separate it using a s
 **Hyperparameter Tuning:**
 
 - **C (Cost/Budget):** This is a general hyperparameter used in the Support Vector Classifier (soft margin) algorithm, which also applies to non-linear SVMs. It acts as a budget for the total amount of "slack" allowed for observations to fall on the wrong side of the margin or hyperplane.
-- **γ (Gamma):** Defines the influence of a single training example. A low gamma makes the influence of each training point large, while a high gamma makes it small.
+- **$\gamma$ (Gamma):** Defines the influence of a single training example. A low gamma makes the influence of each training point large, while a high gamma makes it small. Note: The `caret` package uses `sigma` where $\gamma = \frac{1}{2\sigma^2}$.
 
 **Model Evaluation:** Confusion matrix and ROC-AUC curves can help us to evaluate classification problems.
 
@@ -426,7 +426,9 @@ grid.arrange(p1, p2, p3, ncol = 3)
 
 The PDPs show that higher Blood Sugar and Systolic BP values increase the probability of high-risk classification. Age shows a moderate positive effect, with risk increasing for older patients.
 
-\newpage
+```{=latex}
+\clearpage
+```
 
 ## Local Explanations (SHAP)
 
@@ -508,21 +510,9 @@ kable(final_df, caption = "Final Model Comparison Summary", format = "markdown")
 3. **Systolic Blood Pressure and Age** are secondary important features, aligning with known risk factors for pregnancy complications
 4. **Both models achieve excellent discrimination** with AUC-ROC > 0.90, indicating reliable separation between risk classes
 
-## Clinical Recommendations
-
-Based on our analysis, we recommend:
-
-- **Primary Screening:** Use Random Forest model for initial risk assessment due to higher sensitivity
-- **Key Indicators to Monitor:** Blood sugar levels should be closely monitored, especially values > 8 mmol/L
-- **Blood Pressure Monitoring:** Systolic BP > 130 mmHg should trigger additional evaluation
-- **Age Consideration:** Older maternal age warrants closer monitoring
-
 ## Limitations
 
-- Dataset size (~1,000 observations) may limit generalizability
-- Geographic scope limited to rural Bangladesh
-- Limited feature set (6 predictors) - additional clinical variables could improve predictions
-- Binary classification loses granularity of original ordinal risk levels
+The dataset size (~1,000 observations) may limit generalizability, and the geographic scope is limited to rural Bangladesh. The feature set contains only 6 predictors, so additional clinical variables could improve predictions. Additionally, binary classification loses the granularity of the original ordinal risk levels.
 
 # References
 
