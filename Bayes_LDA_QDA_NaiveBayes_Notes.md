@@ -250,13 +250,82 @@ Where:
 - **μₖ** is a vector of length p (mean for each variable in class k)
 - **Σ** is the **common** variance-covariance matrix (same for all classes)
 
+### Understanding μₖ as a Vector
+
+When we have **p predictor variables**, we need to describe the mean of *each* variable for each class. That's why μₖ is a vector of length p.
+
+```
+Single variable (p=1):              Multiple variables (p=2):
+
+     Height                              Height    Weight
+       │                                   │         │
+       ▼                                   ▼         ▼
+    μₖ = 1.75                          μₖ = (1.75,   72)ᵀ
+    (single number)                         ↑         ↑
+                                       mean height  mean weight
+                                       for class k  for class k
+```
+
+### Understanding the Covariance Matrix Σ
+
+The covariance matrix captures **two things**:
+1. **Variance** of each variable (how spread out it is) - on the diagonal
+2. **Covariance** between variables (how they move together) - off-diagonal
+
+For p = 2 variables:
+
+```
+Σ = [ Var(X₁)      Cov(X₁,X₂) ]   =   [ σ₁²    σ₁₂ ]
+    [ Cov(X₂,X₁)   Var(X₂)     ]       [ σ₁₂    σ₂²  ]
+```
+
+**Visual interpretation of covariance:**
+
+```
+Cov = 0 (independent)      Cov > 0 (positive)         Cov < 0 (negative)
+
+    X₂                          X₂                          X₂
+    │    ○ ○                    │      ○ ○                  │  ○ ○
+    │  ○ ○ ○ ○                  │    ○ ○ ○                  │    ○ ○ ○
+    │  ○ ○ ○ ○                  │  ○ ○ ○                    │      ○ ○ ○
+    │    ○ ○                    │○ ○                        │        ○ ○
+    └──────────X₁               └──────────X₁               └──────────X₁
+
+    Circular shape              Tilted ellipse (/)          Tilted ellipse (\)
+```
+
 ### Example with 2 Variables
 
 Given:
-- Group Y=1: μ₁ = (2.2, 13.5)ᵀ
-- Group Y=2: μ₂ = (3.9, 11.8)ᵀ
+- Group Y=1: μ₁ = (2.2, 13.5)ᵀ → Mean of X₁ is 2.2, mean of X₂ is 13.5
+- Group Y=2: μ₂ = (3.9, 11.8)ᵀ → Mean of X₁ is 3.9, mean of X₂ is 11.8
 - Covariance matrix: Σ = [[1, 0.5], [0.5, 1]]
 - Prior: π₀ = 0.5
+
+**What does Σ = [[1, 0.5], [0.5, 1]] mean?**
+
+| Element | Value | Meaning |
+|---------|-------|---------|
+| Σ[1,1] | 1 | Variance of X₁ = 1 (std dev = 1) |
+| Σ[2,2] | 1 | Variance of X₂ = 1 (std dev = 1) |
+| Σ[1,2] = Σ[2,1] | 0.5 | Covariance between X₁ and X₂ |
+
+The **correlation coefficient**: ρ = Cov(X₁,X₂) / (σ₁ × σ₂) = 0.5 / (1 × 1) = **0.5**
+
+This means X₁ and X₂ have a **moderate positive correlation** (50%) - when X₁ increases, X₂ tends to increase too.
+
+**Key LDA assumption:** Both classes share the **same** Σ - only the means differ!
+
+```
+Class 1:                        Class 2:
+μ₁ = (2.2, 13.5)               μ₂ = (3.9, 11.8)
+     ↓                              ↓
+   Different means!              Different means!
+
+But SAME shape/spread:          But SAME shape/spread:
+Σ = [[1, 0.5],                  Σ = [[1, 0.5],
+     [0.5, 1]]                       [0.5, 1]]
+```
 
 The **decision boundary** between classes is **linear** (a straight line in 2D, a hyperplane in higher dimensions).
 
