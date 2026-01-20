@@ -402,7 +402,7 @@ $$= \log\left(\frac{P(Y=k)}{P(Y=l)}\right) + \mu_k^T \Sigma^{-1} x - \frac{1}{2}
 
 ### Key Insight: The Quadratic Terms Cancel!
 
-The crucial observation is that the **quadratic terms** in x (the terms with x^T Σ^{-1} x) **cancel out** because both classes share the same covariance matrix Σ.
+The crucial observation is that the **quadratic terms** in x (the terms with $x^T \Sigma^{-1} x$) **cancel out** because both classes share the same covariance matrix Σ.
 
 What remains is:
 $$= a_0 + a_1 x_1 + a_2 x_2 + ... + a_p x_p$$
@@ -425,7 +425,7 @@ LDA (same Σ):                       QDA (different Σ):
     │           │                       │           │
     ▼           ▼                       ▼           ▼
 ┌─────────────────────┐           ┌─────────────────────┐
-│  x^T Σ^{-1} x       │           │  x^T Σ_k^{-1} x     │
+│  xᵀ Σ⁻¹ x           │           │  xᵀ Σₖ⁻¹ x          │
 │  (same for both!)   │           │  (DIFFERENT!)       │
 └─────────────────────┘           └─────────────────────┘
          │                                  │
