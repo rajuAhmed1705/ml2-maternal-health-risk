@@ -266,7 +266,56 @@ Single variable (p=1):              Multiple variables (p=2):
                                        for class k  for class k
 ```
 
+### What is Covariance?
+
+Before understanding the covariance matrix, let's first understand **covariance** itself.
+
+**Variance** measures how spread out a *single* variable is:
+$$Var(X) = E[(X - \mu)^2] = \frac{1}{n}\sum_{i=1}^{n}(x_i - \bar{x})^2$$
+
+**Covariance** measures how *two* variables move together:
+$$Cov(X, Y) = E[(X - \mu_X)(Y - \mu_Y)] = \frac{1}{n}\sum_{i=1}^{n}(x_i - \bar{x})(y_i - \bar{y})$$
+
+**Interpretation of Covariance:**
+
+| Cov(X,Y) | Meaning | Example |
+|----------|---------|---------|
+| **> 0** (positive) | When X increases, Y tends to increase | Height & Weight |
+| **< 0** (negative) | When X increases, Y tends to decrease | Price & Demand |
+| **= 0** | X and Y have no linear relationship | Height & IQ |
+
+**Numerical Example:**
+
+```
+Person   Height(X)   Weight(Y)   (X-μₓ)   (Y-μᵧ)   (X-μₓ)(Y-μᵧ)
+───────────────────────────────────────────────────────────────
+  A        170         65         -10      -10        +100
+  B        175         70          -5       -5         +25
+  C        180         75           0        0           0
+  D        185         80          +5       +5         +25
+  E        190         85         +10      +10        +100
+───────────────────────────────────────────────────────────────
+Mean:      180         75                    Sum:      +250
+
+Cov(X,Y) = 250/5 = 50  (positive → height and weight increase together)
+```
+
+**Correlation vs Covariance:**
+
+Covariance depends on the units of measurement. To get a standardized measure, we use the **correlation coefficient**:
+
+$$\rho = \frac{Cov(X,Y)}{\sigma_X \cdot \sigma_Y}$$
+
+Correlation is always between -1 and +1:
+- ρ = +1: Perfect positive relationship
+- ρ = -1: Perfect negative relationship
+- ρ = 0: No linear relationship
+
+---
+
 ### Understanding the Covariance Matrix Σ
+
+Now that we understand covariance, the **covariance matrix** simply organizes all variances and covariances into a matrix.
 
 The covariance matrix captures **two things**:
 1. **Variance** of each variable (how spread out it is) - on the diagonal
